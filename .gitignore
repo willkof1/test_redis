@@ -1,6 +1,6 @@
 # Local .terraform directories
 **/.terraform/*
-
+**/.tfvars
 # .tfstate files
 *.tfstate
 *.tfstate.*
@@ -10,3 +10,7 @@ crash.log
 
 # .terraform.lock.hcl file
 .terraform.lock.hcl
+# Ignore Terraform variable files with secrets
+*.tfvars
+*.tfvars.json
+private.tfvars
