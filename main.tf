@@ -16,11 +16,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-# --- Pega seu IP público para a regra de SSH ---
-data "http" "my_ip" {
-  url = "http://checkip.amazonaws.com"
-}
-
 # --- 1. Security Groups ---
 
 # Security Group para a instância EC2
@@ -67,27 +62,35 @@ resource "aws_security_group" "redis_sg" {
   }
 }
 
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.cluster_name}-ec2-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
 }
 
-data "template_file" "user_data" {
-  template = <<-EOF
-    #!/bin/bash
-    yum update -y
-    yum install -y python3 git
-    pip3 install "redis[hiredis]"
-    aws s3 cp s3://will-artefatos/app.py /home/ec2-user/app.py
-    export REDIS_CLUSTER_ENDPOINT=${aws_elasticache_replication_group.redis_cluster_mode.configuration_endpoint_address}
-    export REDIS_AUTH_TOKEN=${var.redis_auth_token}
-    python3 /home/ec2-user/app.py --redis-endpoint $REDIS_CLUSTER_ENDPOINT --auth-token $REDIS_AUTH_TOKEN --action reshard
-    EOF
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_s3" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+
+resource "aws_iam_instance_profile" "ec2_role" {
+  name = "${var.cluster_name}-ec2-role"
+  role = aws_iam_role.ec2_role.name
 }
 
 resource "aws_instance" "test_runner" {
@@ -96,14 +99,34 @@ resource "aws_instance" "test_runner" {
   key_name                    = var.key_pair_name
   vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
   subnet_id                   = var.subnet_ids[0]
-  user_data                   = data.template_file.user_data.rendered
-  iam_instance_profile        = "ec2_s3_profile" # ou o nome do instance profile associado à role s3-role
+  iam_instance_profile        = aws_iam_instance_profile.ec2_role.name
   associate_public_ip_address = true
-
+  # O token é buscado do SSM em runtime — nunca exposto no user_data
+  user_data_base64 = base64encode(<<-EOF
+    #!/bin/bash
+    yum update -y
+    yum install -y python3 git
+    pip3 install "redis[hiredis]"
+    aws s3 cp s3://will-artefatos/app.py /home/ec2-user/app.py
+    REDIS_ENDPOINT="${aws_elasticache_replication_group.redis_cluster_mode.configuration_endpoint_address}"
+    AUTH_TOKEN=$(aws ssm get-parameter \
+      --name "/${var.cluster_name}/redis-auth-token" \
+      --with-decryption \
+      --region "${var.aws_region}" \
+      --query Parameter.Value \
+      --output text)
+    python3 /home/ec2-user/app.py \
+      --redis-endpoint "$REDIS_ENDPOINT" \
+      --auth-token "$AUTH_TOKEN" \
+      --action reshard
+  EOF
+  )
 
   tags = {
     Name = "${var.cluster_name}-test-runner"
   }
+
+  depends_on = [aws_ssm_parameter.redis_auth_token]
 }
 
 resource "aws_elasticache_subnet_group" "redis_subnet_group" {
@@ -117,14 +140,17 @@ resource "aws_elasticache_replication_group" "redis_cluster_mode" {
   engine                     = "redis"
   engine_version             = "7.0" # Specify your desired Redis version
   node_type                  = var.redis_node_type
-  num_node_groups            = 1 # Number of shards
-  replicas_per_node_group    = 2 # Number of read replicas per primary node
+  num_node_groups            = var.num_shards   # Number of shards
+  replicas_per_node_group    = var.num_replicas # Number of read replicas per primary node
   port                       = 6379
   parameter_group_name       = "default.redis7.cluster.on" # Ensure cluster mode parameter group
-  snapshot_retention_limit   = 7
+  snapshot_retention_limit   = 1
   snapshot_window            = "05:00-09:00"
+  maintenance_window         = "sun:02:00-sun:04:00"
+  apply_immediately          = true
   automatic_failover_enabled = true
   transit_encryption_enabled = true
+  at_rest_encryption_enabled = true
   auth_token                 = var.redis_auth_token
   subnet_group_name          = aws_elasticache_subnet_group.redis_subnet_group.name
   security_group_ids         = [aws_security_group.redis_sg.id]
@@ -132,4 +158,11 @@ resource "aws_elasticache_replication_group" "redis_cluster_mode" {
   tags = {
     Name = var.cluster_name
   }
+}
+
+# Armazena o token no SSM
+resource "aws_ssm_parameter" "redis_auth_token" {
+  name  = "/${var.cluster_name}/redis-auth-token"
+  type  = "SecureString"
+  value = var.redis_auth_token
 }

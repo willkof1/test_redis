@@ -10,6 +10,19 @@ variable "cluster_name" {
   default     = "cluster-reshard-test"
 }
 
+variable "num_shards" {
+  description = "Número de shards do cluster Redis"
+  type        = number
+  default     = 2
+}
+
+variable "num_replicas" {
+  description = "Número de shards do cluster Redis"
+  type        = number
+  default     = 1
+}
+
+
 variable "instance_type" {
   description = "Tipo da instância EC2 que executará o script de teste."
   type        = string
