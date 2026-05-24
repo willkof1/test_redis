@@ -1,0 +1,13 @@
+{
+  "name": "SRE Universal Auto Commit",
+  "version": "1.0.0",
+  "description": "Auto-commit para Terraform, Kubernetes, GitHub Actions e qualquer IaC",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/*.tf", "**/*.yml", "**/*.yaml", "**/*.tfvars", "**/*.jsonnet", "**/*.conf"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Execute SRE auto-commit workflow: 1. git add -A. 2. Analise o arquivo editado e detecte o tipo de IaC. 3. Gere conventional commit em ingles (ex: feat(terraform): add module). 4. git commit -m [mensagem]. 5. git push. Regras: Se .tf -> scope terraform, se .yml/.yaml -> scope k8s/ci."
+  }
+}

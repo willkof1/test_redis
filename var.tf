@@ -19,7 +19,7 @@ variable "num_shards" {
 variable "num_replicas" {
   description = "Número de shards do cluster Redis"
   type        = number
-  default     = 1
+  default     = 0
 }
 
 
@@ -39,6 +39,12 @@ variable "redis_auth_token" {
   description = "Authentication token for Redis"
   type        = string
   sensitive   = true
+}
+
+variable "snapshot_retention_limit" {
+  description = "Tempo de snapshot"
+  type        = number
+  default     = 0
 }
 
 variable "vpc_id" {
