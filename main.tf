@@ -105,7 +105,7 @@ resource "aws_instance" "test_runner" {
   user_data_base64 = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
-    yum install -y python3 git
+    yum install -y python3 git screen
     pip3 install "redis[hiredis]"
     aws s3 cp s3://will-artefatos/app.py /home/ec2-user/app.py
     REDIS_ENDPOINT="${aws_elasticache_replication_group.redis_cluster_mode.configuration_endpoint_address}"
@@ -115,10 +115,11 @@ resource "aws_instance" "test_runner" {
       --region "${var.aws_region}" \
       --query Parameter.Value \
       --output text)
-    python3 /home/ec2-user/app.py \
-      --redis-endpoint "$REDIS_ENDPOINT" \
-      --auth-token "$AUTH_TOKEN" \
-      --action reshard
+    screen -dmS reshard bash -c "python3 -u /home/ec2-user/app.py \
+      --redis-endpoint \"$REDIS_ENDPOINT\" \
+      --auth-token \"$AUTH_TOKEN\" \
+      --action reshard \
+      >> /var/log/reshard-test.log 2>&1"
   EOF
   )
 

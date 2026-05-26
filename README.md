@@ -67,16 +67,44 @@ O script `app.py` testa continuamente a resiliência do cluster Redis durante op
 
 ### Execução
 
-O script é automaticamente iniciado na EC2 via user-data com as variáveis de ambiente:
-- `REDIS_CLUSTER_ENDPOINT`
-- `REDIS_AUTH_TOKEN`
+O script é automaticamente iniciado na EC2 via user-data dentro de uma sessão `screen`, com output redirecionado para `/var/log/reshard-test.log`.
 
 ### Monitoramento
 
 A aplicação registra:
+
 - Sucessos de operações
 - Falhas de conexão
 - Erros de cluster
 - Timeouts
 - Exceções inesperadas
 
+### Gerenciando a sessão via SSH
+
+Após conectar na EC2 via SSH, use os comandos abaixo para interagir com o teste:
+
+**Acompanhar o log em tempo real:**
+
+```bash
+tail -f /var/log/reshard-test.log
+```
+
+**Reconectar à sessão screen (para interagir diretamente):**
+
+```bash
+screen -r reshard
+```
+
+**Encerrar o teste e ver o resumo final:**
+
+Dentro da sessão screen, pressione `Ctrl+C`. O script imprimirá as estatísticas finais no log e encerrará.
+
+**Desconectar da sessão sem encerrar o teste:**
+
+Dentro da sessão screen, pressione `Ctrl+A` seguido de `D`.
+
+**Listar sessões screen ativas:**
+
+```bash
+screen -ls
+```
